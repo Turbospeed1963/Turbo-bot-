@@ -31,7 +31,11 @@ const joinKb = (env) =>
     [UrlBtn("📢 Channel Join ရန်", env.CHANNEL_URL)],
     [Btn("✅ Join ပြီးပြီ", "check")],
   ]);
-const adminId = (env) => Number(env.ADMIN_ID);
+// ADMIN_ID ထဲမှာ comma နဲ့ခြားပြီး Admin ဘယ်နှယောက်မဆို ထည့်လို့ရတယ်: "111,222"
+const adminIds = (env) =>
+  String(env.ADMIN_ID).split(",").map((x) => Number(x.trim())).filter(Boolean);
+const isAdminId = (env, uid) => adminIds(env).includes(uid);
+const stateKey = (uid) => `admin_state_${uid}`; // Admin တစ်ယောက်ချင်းစီ state သီးသန့်
 
 // ---------------- Telegram ----------------
 async function tg(env, method, body) {
@@ -144,7 +148,7 @@ const limitText = () =>
 
 // ---------------- Channel join ----------------
 async function isMember(env, uid) {
-  if (uid === adminId(env)) return true;
+  if (isAdminId(env, uid)) return true;
   const r = await tg(env, "getChatMember", { chat_id: env.CHANNEL, user_id: uid });
   return r.ok && ["member", "administrator", "creator"].includes(r.result.status);
 }
@@ -171,7 +175,7 @@ function mainMenu(env, uid, s) {
     [Btn(`👥 လူခေါ်ရန် (+${REF_REWARD} coin)`, "invite"), Btn("💰 My Coin", "balance")],
     [Btn("📞 ဆက်သွယ်ရန်", "contact")],
   ];
-  if (uid === adminId(env)) {
+  if (isAdminId(env, uid)) {
     const toggle = keysOpen(s) ? "🔒 QR ပိတ်ရန်" : "🔓 QR ဖွင့်ရန်";
     rows.push(
       [Btn(toggle, "adm_toggle")],
@@ -194,7 +198,7 @@ function menuText(env, uid, s) {
     `${releaseText(s)}\n` +
     `💎 QR code များကို coin ဖြင့် လဲပါ (တစ်နေ့ ၁ ခုပဲ)\n\n` +
     `📞 Developer: @${DEV_USER}\n🛡 Admin: @${ADMIN_USER}`;
-  if (uid === adminId(env)) {
+  if (isAdminId(env, uid)) {
     text +=
       `\n\n👤 User စုစုပေါင်း: ${s.users}` +
       `\n🕒 Bot time: ${fmtMM(Date.now())} (မြန်မာစံတော်ချိန်)`;
@@ -298,8 +302,8 @@ async function onButton(env, ctx, q) {
   const uid = q.from.id;
   const d = q.data;
   await tg(env, "answerCallbackQuery", { callback_query_id: q.id });
-  const isAdmin = uid === adminId(env);
-  if (isAdmin) await setSetting(env, "admin_state", null);
+  const isAdmin = isAdminId(env, uid);
+  if (isAdmin) await setSetting(env, stateKey(uid), null);
 
   if (!(await isMember(env, uid))) {
     return edit(env, q, JOIN_TEXT, joinKb(env), true);
@@ -359,7 +363,7 @@ async function onButton(env, ctx, q) {
   }
   if (d === "adm_qr_new" || d === "adm_qr_old") {
     const version = d.split("_")[2];
-    await setSetting(env, "admin_state", `addqr_${version}`);
+    await setSetting(env, stateKey(uid), `addqr_${version}`);
     return edit(
       env, q,
       `➕ ${VERSIONS[version]} QR code ပုံများကို ပို့ပါ\n` +
@@ -369,11 +373,11 @@ async function onButton(env, ctx, q) {
     );
   }
   if (d === "adm_coin") {
-    await setSetting(env, "admin_state", "addcoin");
+    await setSetting(env, stateKey(uid), "addcoin");
     return edit(env, q, "ဒီပုံစံနဲ့ ပို့ပါ:\n<code>user_id amount</code>", BACK, true);
   }
   if (d === "adm_time") {
-    await setSetting(env, "admin_state", "settime");
+    await setSetting(env, stateKey(uid), "settime");
     const s = await menuData(env, uid);
     return edit(
       env, q,
@@ -385,12 +389,12 @@ async function onButton(env, ctx, q) {
     );
   }
   if (d === "adm_all") {
-    await setSetting(env, "admin_state", "bc_all");
+    await setSetting(env, stateKey(uid), "bc_all");
     const s = await menuData(env, uid);
     return edit(env, q, `📢 User ${s.users} ယောက်လုံးကို ပို့မယ့် စာကို ရေးပို့ပါ:`, BACK);
   }
   if (d === "adm_one") {
-    await setSetting(env, "admin_state", "bc_one");
+    await setSetting(env, stateKey(uid), "bc_one");
     return edit(
       env, q,
       "ဒီပုံစံနဲ့ ပို့ပါ:\n<code>user_id စာ</code>\n\nဥပမာ:\n<code>123456789 မင်္ဂလာပါ</code>",
@@ -402,8 +406,8 @@ async function onButton(env, ctx, q) {
 // Admin က QR ပုံ (photo သို့မဟုတ် image file) တင်တာကို လက်ခံမယ်
 async function onMedia(env, m) {
   const uid = m.from.id;
-  if (uid !== adminId(env)) return;
-  const state = await getSetting(env, "admin_state");
+  if (!isAdminId(env, uid)) return;
+  const state = await getSetting(env, stateKey(uid));
   if (!state || !state.startsWith("addqr_")) return;
   const version = state.split("_")[1];
 
@@ -435,8 +439,8 @@ async function onMedia(env, m) {
 
 async function onText(env, ctx, m) {
   const uid = m.from.id;
-  if (uid !== adminId(env)) return;
-  const state = await getSetting(env, "admin_state");
+  if (!isAdminId(env, uid)) return;
+  const state = await getSetting(env, stateKey(uid));
   if (!state) return;
   const chat = m.chat.id;
   const body = m.text;
@@ -466,6 +470,7 @@ async function onText(env, ctx, m) {
       msg = `✅ သတ်မှတ်ပြီးပါပြီ။\n\n${releaseText(await menuData(env, uid))}`;
     }
   } else if (state === "bc_all") {
+    await setSetting(env, "bc_admin", uid);
     await setSetting(env, "bc_text", body);
     await setSetting(env, "bc_cursor", 0);
     await setSetting(env, "bc_ok", 0);
@@ -489,7 +494,7 @@ async function onText(env, ctx, m) {
     return;
   }
 
-  await setSetting(env, "admin_state", null);
+  await setSetting(env, stateKey(uid), null);
   const s = await menuData(env, uid);
   return send(env, chat, msg, { reply_markup: mainMenu(env, uid, s) });
 }
@@ -509,8 +514,9 @@ async function bcStep(env) {
   const rows = await sb(env, `users?select=id&id=gt.${cursor}&order=id.asc&limit=${BC_CHUNK}`);
 
   if (!rows.length) {
-    await send(env, adminId(env), `✅ ပို့ပြီး: ${ok}\n❌ မရောက်: ${fail}`);
-    for (const k of ["bc_text", "bc_cursor", "bc_ok", "bc_fail", "bc_lock"]) await setSetting(env, k, null);
+    const to = Number(await getSetting(env, "bc_admin")) || adminIds(env)[0];
+    await send(env, to, `✅ ပို့ပြီး: ${ok}\n❌ မရောက်: ${fail}`);
+    for (const k of ["bc_text", "bc_admin", "bc_cursor", "bc_ok", "bc_fail", "bc_lock"]) await setSetting(env, k, null);
     return;
   }
   let last = cursor;
