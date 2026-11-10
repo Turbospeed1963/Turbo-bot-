@@ -558,6 +558,44 @@ export default {
       return new Response(JSON.stringify(r, null, 2), { headers: { "content-type": "application/json" } });
     }
 
+    // စစ်ဆေးရန်: https://<worker>/debug?key=<WEBHOOK_SECRET>  (secret တန်ဖိုးတွေ မပြပါဘူး)
+    if (url.pathname === "/debug") {
+      if (url.searchParams.get("key") !== env.WEBHOOK_SECRET) return new Response("forbidden", { status: 403 });
+      const out = {};
+      out.env = {
+        BOT_TOKEN: !!env.BOT_TOKEN,
+        WEBHOOK_SECRET: !!env.WEBHOOK_SECRET,
+        SUPABASE_SERVICE_KEY: !!env.SUPABASE_SERVICE_KEY,
+        SUPABASE_URL: env.SUPABASE_URL || null,
+        ADMIN_IDS: adminIds(env),
+        CHANNEL: env.CHANNEL || null,
+      };
+      const me = await tg(env, "getMe", {});
+      out.bot = me.ok ? { username: me.result.username, id: me.result.id } : me;
+      const wh = await tg(env, "getWebhookInfo", {});
+      out.webhook = wh.result
+        ? {
+            url: wh.result.url,
+            pending_updates: wh.result.pending_update_count,
+            last_error_date: wh.result.last_error_date
+              ? new Date(wh.result.last_error_date * 1000).toISOString()
+              : null,
+            last_error_message: wh.result.last_error_message || null,
+          }
+        : wh;
+      try {
+        const m = await menuData(env, adminIds(env)[0]);
+        out.supabase = { ok: true, users: m.users };
+      } catch (e) {
+        out.supabase = { ok: false, error: String((e && e.message) || e).slice(0, 500) };
+      }
+      if (me.ok) {
+        const cm = await tg(env, "getChatMember", { chat_id: env.CHANNEL, user_id: me.result.id });
+        out.channel = cm.ok ? { bot_status_in_channel: cm.result.status } : { ok: false, error: cm.description };
+      }
+      return new Response(JSON.stringify(out, null, 2), { headers: { "content-type": "application/json" } });
+    }
+
     if (url.pathname === "/webhook" && request.method === "POST") {
       if (request.headers.get("X-Telegram-Bot-Api-Secret-Token") !== env.WEBHOOK_SECRET) {
         return new Response("forbidden", { status: 403 });
