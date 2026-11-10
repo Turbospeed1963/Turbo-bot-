@@ -563,7 +563,13 @@ export default {
         return new Response("forbidden", { status: 403 });
       }
       const update = await request.json();
-      ctx.waitUntil(handleUpdate(env, ctx, update).catch((e) => console.error("update error:", e)));
+      ctx.waitUntil(
+        handleUpdate(env, ctx, update).catch(async (e) => {
+          console.error("update error:", e);
+          // Error ကို Admin ဆီ ပို့ပေးမယ် (debug လွယ်အောင်)
+          await send(env, adminIds(env)[0], `⚠️ Bot error:\n${String(e && e.message || e).slice(0, 600)}`);
+        })
+      );
       return new Response("ok");
     }
 
