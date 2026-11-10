@@ -3,10 +3,10 @@ main = "worker.js"
 compatibility_date = "2025-01-01"
 
 [vars]
-ADMIN_ID = "8690698115,SECOND_ADMIN_ID"
+ADMIN_ID = "8690698115,7188797926"
 CHANNEL = "@arsar2027"
 CHANNEL_URL = "https://t.me/arsar2027"
-SUPABASE_URL = "https://YOUR-PROJECT-REF.supabase.co"
+SUPABASE_URL = "https://mqirqdtrucxabpumwpag.supabase.co"
 
 # broadcast ကို chunk လိုက်ဆက်ပို့ဖို့
 [triggers]
